@@ -1,6 +1,15 @@
 ---
 name: blockbench-headless
-description: Drive this repo's headless Blockbench SDK to programmatically create/edit/paint/render/export low-poly & Minecraft models with NO GUI. Use whenever the task is to build or modify a 3D model (cubes/groups/bones), draw or edit pixel textures (item/block art via the Image project type or UV-located face painting), render a model to PNG headlessly, run a live browser preview, batch/parallelize model work across a worker pool, or import/export Blockbench formats (.bbmodel, glTF, OBJ, Java/Bedrock) from Node. Triggers: "build a model", "make a Minecraft block/item", "draw this texture", "render the model", "export bbmodel/gltf", "preview the model", "generate N models in parallel".
+description: >
+  Drive this repo's headless Blockbench SDK to programmatically
+  create/edit/paint/render/export low-poly & Minecraft models with NO GUI.
+  Use whenever the task is to build or modify a 3D model (cubes/groups/bones),
+  draw or edit pixel textures (item/block art via the Image project type or
+  UV-located face painting), render a model to PNG headlessly, run a live
+  browser preview, batch/parallelize model work across a worker pool, or
+  import/export Blockbench formats (.bbmodel, glTF, OBJ, Java/Bedrock) from Node.
+  Triggers: build a model, make a Minecraft block/item, draw this texture,
+  render the model, export bbmodel/gltf, preview the model, generate N models in parallel.
 ---
 
 # Blockbench Headless SDK
