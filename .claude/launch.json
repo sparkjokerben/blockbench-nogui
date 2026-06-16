@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "blockbench-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["spike/sdk-test/preview-serve.mjs"],
+      "port": 8782
+    }
+  ]
+}

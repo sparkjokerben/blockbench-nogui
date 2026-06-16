@@ -1,0 +1,13 @@
+{
+  "name": "headless-render-spike",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Phase 0 spike: prove THREE r0.129 renders to PNG headlessly in pure node",
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.0",
+    "gl": "^8.1.6",
+    "pngjs": "^7.0.0",
+    "three": "0.129.0"
+  }
+}

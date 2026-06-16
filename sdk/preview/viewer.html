@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Blockbench Headless — Live Preview</title>
+<style>
+	html, body { margin: 0; height: 100%; background: #21252b; color: #cdd3de; font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+	#c { display: block; width: 100vw; height: 100vh; }
+	#hud { position: fixed; top: 10px; left: 12px; background: rgba(0,0,0,.45); padding: 8px 11px; border-radius: 7px; pointer-events: none; }
+	#hud b { color: #6cf; }
+	#bar { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.5); padding: 7px 12px; border-radius: 9px; display: flex; gap: 10px; align-items: center; }
+	#bar button, #bar select { background: #3a4150; color: #cdd3de; border: 0; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+	#bar button:hover { background: #49506a; }
+	#status { position: fixed; top: 10px; right: 12px; background: rgba(0,0,0,.45); padding: 6px 10px; border-radius: 7px; font-size: 11px; }
+	.dot { display:inline-block; width:8px;height:8px;border-radius:50%;background:#5c6; margin-right:5px; }
+</style>
+<script type="importmap">
+{ "imports": {
+	"three": "https://unpkg.com/three@0.129.0/build/three.module.js",
+	"three/OrbitControls": "https://unpkg.com/three@0.129.0/examples/jsm/controls/OrbitControls.js"
+}}
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>Headless Preview</b><br><span id="meta">loading…</span></div>
+<div id="status"><span class="dot"></span><span id="conn">connecting</span></div>
+<div id="bar">
+	<button id="play">▶ Play</button>
+	<select id="anim"><option value="">(no animation)</option></select>
+	<button id="reset">Reset view</button>
+	<label><input type="checkbox" id="grid" checked> grid</label>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/OrbitControls';
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x21252b);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 5000);
+camera.position.set(40, 35, 50);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+scene.add(new THREE.AmbientLight(0xffffff, 1));
+
+let grid = new THREE.GridHelper(64, 16, 0x55607a, 0x3a4150);
+scene.add(grid);
+
+function resize() {
+	renderer.setSize(innerWidth, innerHeight, false);
+	camera.aspect = innerWidth / innerHeight;
+	camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+const D2R = Math.PI / 180;
+let modelRoot = null;       // THREE.Group of current model
+let groupObjects = {};      // uuid -> THREE.Object3D (for animation)
+let groupBase = {};         // uuid -> {position, rotation, scale}
+let animations = [];
+let currentAnim = null;
+let playing = false;
+let animTime = 0;
+let lastT = performance.now();
+
+function num(v) { const n = typeof v === 'number' ? v : parseFloat(v); return Number.isFinite(n) ? n : 0; }
+
+function makeTexture(dataUrl) {
+	const tex = new THREE.Texture();
+	const img = new Image();
+	img.onload = () => { tex.image = img; tex.needsUpdate = true; };
+	img.src = dataUrl;
+	tex.magFilter = THREE.NearestFilter;
+	tex.minFilter = THREE.NearestFilter;
+	tex.flipY = true;
+	return tex;
+}
+
+// three BoxGeometry face order -> blockbench face keys
+const FACE_INDEX = ['east', 'west', 'up', 'down', 'south', 'north']; // +x,-x,+y,-y,+z,-z
+
+function buildCube(el, textures, resW, resH) {
+	const from = el.from, to = el.to;
+	const w = Math.abs(to[0] - from[0]) || 0.01;
+	const h = Math.abs(to[1] - from[1]) || 0.01;
+	const d = Math.abs(to[2] - from[2]) || 0.01;
+	const geo = new THREE.BoxGeometry(w, h, d);
+	const center = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2, (from[2] + to[2]) / 2];
+	const origin = el.origin || [0, 0, 0];
+	// translate geometry so the cube sits at its world coords relative to its own origin pivot
+	geo.translate(center[0] - origin[0], center[1] - origin[1], center[2] - origin[2]);
+
+	// per-face UV + materials
+	const uv = geo.attributes.uv;
+	const materials = [];
+	for (let fi = 0; fi < 6; fi++) {
+		const faceKey = FACE_INDEX[fi];
+		const face = el.faces && el.faces[faceKey];
+		let mat;
+		if (face && face.uv && (face.texture !== null && face.texture !== undefined)) {
+			const tex = resolveTex(face.texture, textures);
+			mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02, side: THREE.DoubleSide });
+			const [x1, y1, x2, y2] = face.uv;
+			const uL = x1 / resW, uR = x2 / resW;
+			const vT = 1 - y1 / resH, vB = 1 - y2 / resH;
+			const o = fi * 4; // [TL,TR,BL,BR]
+			uv.setXY(o + 0, uL, vT);
+			uv.setXY(o + 1, uR, vT);
+			uv.setXY(o + 2, uL, vB);
+			uv.setXY(o + 3, uR, vB);
+		} else {
+			mat = new THREE.MeshBasicMaterial({ color: 0xb8b8c0, side: THREE.DoubleSide });
+		}
+		materials.push(mat);
+	}
+	uv.needsUpdate = true;
+	const mesh = new THREE.Mesh(geo, materials);
+	mesh.position.set(origin[0], origin[1], origin[2]);
+	if (el.rotation) mesh.rotation.set(el.rotation[0] * D2R, el.rotation[1] * D2R, el.rotation[2] * D2R, 'ZYX');
+	return mesh;
+}
+
+const texCache = new Map();
+function resolveTex(ref, textures) {
+	let t;
+	if (typeof ref === 'number') t = textures[ref];
+	else t = textures.find(x => x.uuid === ref);
+	if (!t) return null;
+	if (!texCache.has(t.uuid)) texCache.set(t.uuid, makeTexture(t.source));
+	return texCache.get(t.uuid);
+}
+
+function buildNode(node, parentOrigin, elementsById, textures, resW, resH, root) {
+	if (typeof node === 'string') {
+		const el = elementsById[node];
+		if (el) root.add(buildCube(el, textures, resW, resH));
+		return;
+	}
+	// group
+	const g = new THREE.Object3D();
+	const origin = node.origin || [0, 0, 0];
+	g.position.set(origin[0] - parentOrigin[0], origin[1] - parentOrigin[1], origin[2] - parentOrigin[2]);
+	if (node.rotation) g.rotation.set(node.rotation[0] * D2R, node.rotation[1] * D2R, node.rotation[2] * D2R, 'ZYX');
+	root.add(g);
+	groupObjects[node.uuid] = g;
+	groupBase[node.uuid] = { position: g.position.clone(), rotation: g.rotation.clone() };
+	(node.children || []).forEach(ch => buildNode(ch, origin, elementsById, textures, resW, resH, g));
+}
+
+function buildModel(data) {
+	if (modelRoot) { scene.remove(modelRoot); }
+	texCache.clear(); groupObjects = {}; groupBase = {};
+	modelRoot = new THREE.Group();
+	const resW = (data.resolution && data.resolution.width) || 16;
+	const resH = (data.resolution && data.resolution.height) || 16;
+	const textures = data.textures || [];
+	const elementsById = {};
+	(data.elements || []).forEach(e => { elementsById[e.uuid] = e; });
+	const outliner = data.outliner || (data.elements || []).map(e => e.uuid);
+	outliner.forEach(node => buildNode(node, [0, 0, 0], elementsById, textures, resW, resH, modelRoot));
+	scene.add(modelRoot);
+
+	// frame camera to bounds
+	const box = new THREE.Box3().setFromObject(modelRoot);
+	if (!box.isEmpty()) {
+		const c = box.getCenter(new THREE.Vector3());
+		const s = box.getSize(new THREE.Vector3());
+		controls.target.copy(c);
+		const r = Math.max(s.x, s.y, s.z, 4);
+		if (firstLoad) camera.position.set(c.x + r * 1.3, c.y + r * 1.1, c.z + r * 1.6);
+	}
+
+	// animations
+	animations = data.animations || [];
+	const sel = document.getElementById('anim');
+	const prev = sel.value;
+	sel.innerHTML = '<option value="">(no animation)</option>' + animations.map((a, i) => `<option value="${i}">${a.name || 'anim ' + i}</option>`).join('');
+	if (prev && animations[prev]) sel.value = prev;
+	currentAnim = sel.value ? animations[sel.value] : null;
+
+	document.getElementById('meta').innerHTML =
+		`${(data.name || 'model')} — ${(data.elements || []).length} elements, ${textures.length} textures, ${animations.length} anims`;
+	firstLoad = false;
+}
+let firstLoad = true;
+
+// --- animation playback (linear interp; molang strings -> numeric or 0) ---
+function sampleChannel(kfs, t, fallback) {
+	if (!kfs || !kfs.length) return fallback;
+	let prev = kfs[0], next = kfs[kfs.length - 1];
+	for (let i = 0; i < kfs.length; i++) {
+		if (kfs[i].time <= t) prev = kfs[i];
+		if (kfs[i].time >= t) { next = kfs[i]; break; }
+	}
+	const span = (next.time - prev.time) || 1;
+	const f = next.time === prev.time ? 0 : (t - prev.time) / span;
+	const dp = (kf) => kf.data_points && kf.data_points[0] ? kf.data_points[0] : {};
+	const a = dp(prev), b = dp(next);
+	return [
+		num(a.x) + (num(b.x) - num(a.x)) * f,
+		num(a.y) + (num(b.y) - num(a.y)) * f,
+		num(a.z) + (num(b.z) - num(a.z)) * f,
+	];
+}
+function applyAnimation(anim, t) {
+	if (!anim || !anim.animators) return;
+	for (const uuid in anim.animators) {
+		const obj = groupObjects[uuid];
+		const base = groupBase[uuid];
+		if (!obj || !base) continue;
+		const animator = anim.animators[uuid];
+		const byCh = { rotation: [], position: [], scale: [] };
+		(animator.keyframes || []).forEach(kf => { if (byCh[kf.channel]) byCh[kf.channel].push(kf); });
+		for (const ch in byCh) byCh[ch].sort((p, q) => p.time - q.time);
+		const rot = sampleChannel(byCh.rotation, t, [0, 0, 0]);
+		const pos = sampleChannel(byCh.position, t, [0, 0, 0]);
+		const scl = sampleChannel(byCh.scale, t, [1, 1, 1]);
+		obj.rotation.set(base.rotation.x - rot[0] * D2R, base.rotation.y - rot[1] * D2R, base.rotation.z + rot[2] * D2R, 'ZYX');
+		obj.position.set(base.position.x + pos[0], base.position.y + pos[1], base.position.z - pos[2]);
+		obj.scale.set(scl[0], scl[1], scl[2]);
+	}
+}
+
+function tick() {
+	requestAnimationFrame(tick);
+	const now = performance.now();
+	const dt = (now - lastT) / 1000; lastT = now;
+	if (playing && currentAnim) {
+		animTime += dt;
+		const len = currentAnim.length || 1;
+		if (currentAnim.loop === 'loop' || currentAnim.loop === true || currentAnim.loop === 'hold') {
+			animTime = currentAnim.loop === 'hold' ? Math.min(animTime, len) : animTime % len;
+		} else if (animTime > len) { animTime = 0; }
+		applyAnimation(currentAnim, animTime);
+	}
+	controls.update();
+	renderer.render(scene, camera);
+}
+tick();
+
+// --- data loading + SSE hot reload ---
+async function load() {
+	try {
+		const data = await (await fetch('/model.json?t=' + Date.now())).json();
+		buildModel(data);
+	} catch (e) { console.error(e); }
+}
+load();
+
+const es = new EventSource('/events');
+es.onopen = () => { document.getElementById('conn').textContent = 'live'; };
+es.onerror = () => { document.getElementById('conn').textContent = 'reconnecting'; };
+es.onmessage = () => load();
+
+// UI
+document.getElementById('play').onclick = (e) => {
+	playing = !playing;
+	e.target.textContent = playing ? '⏸ Pause' : '▶ Play';
+	if (!playing && currentAnim) { animTime = 0; applyAnimation(currentAnim, 0); }
+};
+document.getElementById('anim').onchange = (e) => {
+	currentAnim = e.target.value ? animations[e.target.value] : null;
+	animTime = 0;
+};
+document.getElementById('reset').onclick = () => { firstLoad = true; load(); };
+document.getElementById('grid').onchange = (e) => { grid.visible = e.target.checked; };
+</script>
+</body>
+</html>

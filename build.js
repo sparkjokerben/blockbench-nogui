@@ -64,16 +64,18 @@ function createJsonPlugin(ext_suffix, namespace) {
 };
 
 const isApp = options.target == 'electron';
+const isHeadless = options.target == 'headless';
 const dev_mode = options.watch || options.serve;
-const minify = !dev_mode;
+const minify = !dev_mode && !isHeadless;
 
 /**
  * @type {esbuild.BuildOptions} BuildOptions
  */
 const config = {
-    entryPoints: ['./js/main.js'],
+    entryPoints: [isHeadless ? './js/main_headless.ts' : './js/main.js'],
     define: {
         isApp: isApp.toString(),
+        isHeadless: isHeadless.toString(),
         appVersion: `"${pkg.version}"`,
     },
     platform: 'node',
@@ -81,7 +83,7 @@ const config = {
     format: 'esm',
     bundle: true,
     minify,
-    outfile: './dist/bundle.js',
+    outfile: isHeadless ? './dist/headless.js' : './dist/bundle.js',
     mainFields: ['module', 'main'],
     logLevel: 'info',
     logOverride: {
@@ -89,6 +91,8 @@ const config = {
     },
     external: [
         'electron',
+        // headless runtime deps are required from node_modules at runtime, not bundled
+        ...(isHeadless ? ['gl', '@napi-rs/canvas', 'jsdom', 'pngjs'] : []),
     ],
     loader: {
         '.bbtheme': 'text',
@@ -97,7 +101,7 @@ const config = {
     plugins: [
         conditionalImportPlugin(2, {
             filter: /native_apis/,
-            file: isApp ? 'native_apis.ts' : 'native_apis_web.ts'
+            file: isHeadless ? 'native_apis_headless.ts' : (isApp ? 'native_apis.ts' : 'native_apis_web.ts')
         }),
         conditionalImportPlugin(3, {
             filter: /vue.js/,
@@ -106,7 +110,7 @@ const config = {
         }),
         conditionalImportPlugin(1, {
             filter: /desktop/,
-            file: isApp ? 'desktop.js' : 'web.js'
+            file: isHeadless ? 'headless.js' : (isApp ? 'desktop.js' : 'web.js')
         }),
         createJsonPlugin('.bbkeymap', 'bbkeymap'),
         vuePlugin(),
