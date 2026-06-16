@@ -120,6 +120,50 @@ const gltf = await s.export('gltf', { encoding: 'ascii', embed_textures: true })
   parallelism use the WorkerPool.
 - After editing anything in `js/` of the engine directory, **rebuild** `dist/headless.js`.
 
+## Using via MCP (Cowork / sandbox environments)
+
+An MCP server is available at `mcp/server.mjs`. It wraps the SDK so you can use it
+without a local shell — ideal for Cowork agents or any sandboxed environment.
+
+**MCP tools:**
+- `check_setup` — verify dist/headless.js exists and env is ready (call first)
+- `run_script` — execute JS or TS code; write outputs to `process.env.BB_OUTPUT_DIR`
+  and they are returned automatically (text as UTF-8, PNG/binary as base64)
+- `build_engine` — rebuild dist/headless.js if js/ files changed
+- `list_files` — list a directory
+- `read_file` — read any file (binary -> base64)
+
+**Example run_script payload (TypeScript):**
+```ts
+import { writeFileSync } from 'node:fs';
+import { createSession, renderSession } from 'blockbench-headless';
+
+const s = createSession('java_block', { name: 'stone' });
+const cube = s.addCube({ name: 'block', from: [0,0,0], to: [16,16,16] });
+const tex = s.addTexture({ name: 'tex', width: 16, height: 16, fill: '#888' });
+s.applyTexture(cube, tex);
+
+const outDir = process.env.BB_OUTPUT_DIR!;
+writeFileSync(`${outDir}/stone.png`, renderSession(s, { angle: 'isometric' }));
+writeFileSync(`${outDir}/stone.bbmodel`, s.exportProject());
+s.close();
+```
+
+**MCP config** (already in `.claude/settings.json` for this project):
+```json
+{
+  "mcpServers": {
+    "blockbench-headless": {
+      "command": "node",
+      "args": ["/Users/jokerben/Documents/WorkSpace/blockbench-nogui/mcp/server.mjs"]
+    }
+  }
+}
+```
+
+For HTTP/SSE mode (remote clients): `BB_MCP_PORT=7821 node mcp/server.mjs`
+Then connect to `http://localhost:7821/sse`.
+
 ## Verify the tool works
 
 Run these from the engine directory to confirm everything is working:

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "blockbench-headless": {
+      "command": "node",
+      "args": ["/Users/jokerben/Documents/WorkSpace/blockbench-nogui/mcp/server.mjs"],
+      "description": "Blockbench headless SDK — run_script / check_setup / build_engine / list_files / read_file"
+    }
+  }
+}

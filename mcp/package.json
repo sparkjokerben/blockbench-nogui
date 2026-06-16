@@ -1,0 +1,14 @@
+{
+  "name": "blockbench-headless-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server wrapping the blockbench-headless SDK",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "start:http": "BB_MCP_PORT=7821 node server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}

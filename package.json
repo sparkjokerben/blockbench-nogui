@@ -157,7 +157,9 @@
 		"publish-types": "npm publish ./types",
 		"generate-docs": "npm run generate-types && npx typedoc --options typedoc.json",
 		"build-headless": "node ./build.js --target=headless",
-		"install-skill": "node ./scripts/install-skill.mjs"
+		"install-skill": "node ./scripts/install-skill.mjs",
+		"mcp": "node ./mcp/server.mjs",
+		"mcp:http": "BB_MCP_PORT=7821 node ./mcp/server.mjs"
 	},
 	"overrides": {
 		"three": "$three"
