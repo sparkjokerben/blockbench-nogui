@@ -155,7 +155,9 @@
 		"webapp": "git checkout gh-pages && git pull && git merge master --no-edit && git push && git checkout master",
 		"generate-types": "tsc --project tsconfig.json && node ./scripts/convert_types.js",
 		"publish-types": "npm publish ./types",
-		"generate-docs": "npm run generate-types && npx typedoc --options typedoc.json"
+		"generate-docs": "npm run generate-types && npx typedoc --options typedoc.json",
+		"build-headless": "node ./build.js --target=headless",
+		"install-skill": "node ./scripts/install-skill.mjs"
 	},
 	"overrides": {
 		"three": "$three"
